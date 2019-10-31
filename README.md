@@ -16,12 +16,12 @@ parse websocket dump payload
 
 查看 websocket 报文的开始位置。
 
-![2](src/2.png)
+![2](blob/master/src/2.jpg?raw=true)
 
 将鼠标放在 Transmission Control Protocol 上，报文会高亮，后面的 81 就是 websocket 的开始位置。
 
 把开始位置输入左上角的输入框就能得到这次 websocket 的信息。
 
-![3](src/3.png)
+![3](blob/master/src/3.jpg?raw=true)
 
 其中包括此次 websocket 是否使用掩码以及掩码的值，websocket payload 的长度和 payload 转为 utf-8 字符串的值。 
