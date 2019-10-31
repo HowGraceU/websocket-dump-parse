@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="X-UA-Compatible" content="ie=edge">
+	<title>Document</title>
+	<style>
+		#payload,
+		#result {
+			width: 450px;
+			height: 450px;
+		}
+	</style>
+</head>
+
+<body>
+	<input type="text" id="tcpEnd" placeholder="tcp end position">
+	<br>
+	<textarea id="payload" placeholder="copy tcpdump as a Hex Stream"></textarea>
+	<textarea id="result" placeholder="copy tcpdump as a Hex Stream"></textarea>
+
+	<script>
+		// 10进制数字转16进制字符串   (161).toString(16) = 'a1'
+		// 16进制字符串转10进制数字		parseInt('a1', 16) = 161 or 0xa1
+
+		// 10进制数字转2进制字符串   (10).toString(2) = '1010'
+		// 16进制字符串转10进制数字		parseInt('1010', 2) = 10 or 0b1010
+
+		// 带符号位移   10 >> 1 = 5 即 0b1010 >> 1 = 0b0101
+
+		// mock 数据
+		// tcp 结束位 68
+		// Hex Stream 
+		// 0004000100060030644552cb000008004500031779354000400667db0a2308c40a1f39cb8fa000509e56c7ba8a27f2b2801800ed59da00000101080a7e341c3424f5bedf81fe02dbc677d0aebd55b9cae44de282e41ab5daae18b48cfc55a5dea216a4cb8518bec8a305b5c0a512f282e41ab1c0a710b5e7a813b5d6e44df29cf047e38cea55b3dca316a4cb840ef294e416b4c3af19f282e419b1c3a355ea8c2ed0564764e634125c9f7e00e45bf2ddb216a2da921ebdcbe44df29cf646e983f747fd9df657e19afc43e694f647f282e412beca921ebdcbe44df29cf744e383f746fd9cfe57e09bfc43e694f647f282e418bcca9503b1dcb223b9c3a355ea8cf447e197eb46e083f547f09ff24de498fc47e08cea55a0cbb404bfc08f13a38cfc2cab8caf13f294e444e09ef647e09ff455fc8ca816bdcbe44df24b4bd5352b4f914820e45bf2dabf07b58cfc45ad82bd55b9cae44df2cdfe4eb6c8fe44e39fa512b69af616b2ccf344e4caa541b198f747e4cff443b28cea55becfab12f294e49150152ed65c417aff36326a9e530629cb598cea55a4d7b612f294f70afcd5e41eb48cfc55b396ff11b696f544e1cda311e49ea715b29bf543b4cdf016e69ff643b19cf215f282e419b1c3a355ea8c20f76b4667fb3f124e914c022ff478417afef282e403a9dea355ea9fbb5bab8caf13f294e442e69ca213b596a316e59afe43b498a54fe898ff15e5cfa412e99cf341e69af455fc8ca816bdcbe44df24a7ee1392c60906d3f23f2634873fc38015393682421cd778cea55a4d7b612f294f70afcd5e41eb48cfc55e79cf744b49fa340b2cff644e4cba312b297f442b1cafe42e4c8f615e696a74ef282e419b1c3a355ea8c22cf464744d137135792551d20c25b4669e2e24a7efc37146155fc8cb20ea0cbe44de1d3ea0cf2c7a255ea8ca212b599a746b698a316e19df247e59ba744b399ff40e7c8a416e299a216e898e45bf2c0a71ab58cfc553416509e520821ca414b43c4361b4d9f7f3bf793682521cd778cea55a4d7b612f294f70a8d82e41fbfddb212b58cfc0cf2c7a255ea8cf547e09ef647e19ce45bf2c0a71ab58cfc5535236492552720ef5e8cea55a4d7b612f294f40aad
+		const payload = document.getElementById('payload');
+		payload.addEventListener('input', e => {
+			parsePayload();
+		})
+
+		const tcpEnd = document.getElementById('tcpEnd');
+		tcpEnd.addEventListener('input', e => {
+			parsePayload();
+		})
+
+		function parsePayload() {
+			try {
+				const hexStream = payload.value;
+				const tcpEndPosition = parseInt(tcpEnd.value, 10);
+				const payloadData = getWSData({ hexStream, tcpEndPosition });
+
+				checkPayLoad(payloadData);
+
+				const {
+					useMask,
+					payloadLen,
+					realLen,
+					mask,
+					body
+				} = getWSBody(payloadData);
+
+				const mask_16 = Array.from(mask, byte => byte.toString(16));
+				const data = bodyTransfromAssic({ body, mask });
+
+				document.getElementById('result').value = `useMask: ${useMask.toString()}
+mask: ${mask_16.join(' ')}
+payloadLen: ${payloadLen}
+realLen: ${realLen}
+
+data: ${JSON.stringify(JSON.parse(data), null, 2)}
+`;
+			} catch (e) {
+				document.getElementById('result').value = `${e.message}
+${e.stack}`;
+			}
+		}
+
+		// 去除多余头部，保留 ws payload, 返回 Uint16 类型
+		function getWSData({ hexStream, tcpEndPosition }) {
+			const len = hexStream.length;
+
+			const buf = new ArrayBuffer(len / 2);
+			const dump = new Uint8Array(buf);
+
+			return dump.map((buffer, index) => {
+				const position = index * 2;
+				const item = hexStream.slice(position, position + 2);
+				return parseInt(item, 16);
+			}).slice(tcpEndPosition)
+		}
+
+		// 检测 websocket 协议是否为不连续，且是文本帧
+		function checkPayLoad(payloadData) {
+			const FIN = (payloadData[0] & 0x80) >> 7;
+			if (FIN !== 1) {
+				throw new Error('websocket is not end, FIN is not 1');
+			}
+
+			const opcode = payloadData[0] & 0x0f;
+			if (opcode !== 0x01) {
+				throw new Error('opcode is not text');
+			}
+		}
+
+		// 获取 websocket 数据和掩码
+		// @return { useMask, payloadLen, realLen, mask, data }
+		function getWSBody(payloadData) {
+			const useMask = (payloadData[1] & 0x80) >> 7;
+			const payloadLen = payloadData[1] & 0x7f;
+
+			let realLen;
+			let mask;
+			let body;
+
+			if (payloadLen < 126) {
+				realLen = payloadLen;
+
+				mask = payloadData.slice(2, 6);
+				body = payloadData.slice(6, 6 + realLen);
+			}
+
+			if (payloadLen === 126) {
+				realLen = (payloadData[2] << 8) + payloadData[3];
+
+				mask = payloadData.slice(4, 8);
+				body = payloadData.slice(8, 8 + realLen);
+			}
+
+
+			return {
+				useMask,
+				payloadLen,
+				realLen,
+				mask,
+				body
+			}
+		}
+
+		// 按照掩码异或数据，并按照 utf-8 转成字符串
+		function bodyTransfromAssic({ body, mask }) {
+			const decoder = new TextDecoder();
+			const data = decoder.decode(body.map((byte, index) => byte ^ mask[index % 4]));
+
+			return data;
+		}
+	</script>
+</body>
+
+</html>
